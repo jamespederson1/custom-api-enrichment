@@ -4,45 +4,45 @@
   "properties": {
     "apiBaseUrl": {
       "title": "API Base URL",
-      "description": "Base URL of the API endpoint (no trailing slash). The lookup value is appended or passed as a parameter based on the Value Position setting. Example: http://ip-api.com/json",
+      "description": "Base URL of the API endpoint (no trailing slash). The lookup value is appended or passed as a parameter based on Value Position. Example: http://ip-api.com/json",
       "type": "string",
       "default": "http://ip-api.com/json"
     },
     "valuePosition": {
       "title": "Lookup Value Position",
       "type": "string",
-      "description": "How the lookup value is added to the request. Path: appended to URL (e.g., /json/8.8.8.8). Query: added as query parameter (e.g., ?q=8.8.8.8). Body: sent in POST/PUT request body only.",
+      "description": "How the lookup value is added to the request.",
       "enum": ["path", "query", "body"],
-      "enumNames": ["Append to URL Path (e.g., /api/lookup/8.8.8.8)", "Query Parameter (e.g., /api/lookup?q=8.8.8.8)", "Request Body Only (POST/PUT)"],
+      "enumNames": ["Append to URL Path (/api/8.8.8.8)", "Query Parameter (?q=8.8.8.8)", "Request Body Only (POST/PUT)"],
       "default": "path"
     },
     "queryParamName": {
       "title": "Query Parameter Name",
-      "description": "Name of the query parameter when Value Position is 'Query'. Example: 'q', 'ip', 'query', 'ipAddress'",
+      "description": "Query param name when Value Position is 'Query' (e.g., q, ip, ipAddress)",
       "type": "string",
       "default": "q"
     },
     "extraQueryParams": {
       "title": "Extra Query Parameters",
-      "description": "Additional query string parameters appended to every request (no leading ? or &). Example: fields=status,country,city,isp,org,query",
+      "description": "Additional query string appended to every request (no leading ? or &). Example: fields=status,country,city,isp",
       "type": "string",
       "default": "fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
     },
     "lookupField": {
       "title": "Lookup Field",
-      "description": "Event field whose value is sent to the API (e.g., src_ip, ip, hostname, hash)",
+      "description": "Event field whose value is sent to the API (e.g., src_ip, ip, hostname)",
       "type": "string",
       "default": "src_ip"
     },
     "enrichPrefix": {
       "title": "Enrichment Field Prefix",
-      "description": "Prefix for all enrichment fields added to events (e.g., geo_ produces geo_country, geo_city)",
+      "description": "Prefix for all enrichment fields (e.g., geo_ produces geo_country, geo_city)",
       "type": "string",
       "default": "geo_"
     },
     "apiKey": {
       "title": "API Key / Token",
-      "description": "API key or token. Leave empty for APIs that don't require auth (like ip-api.com free tier).",
+      "description": "Leave empty for APIs that don't require auth (like ip-api.com free tier)",
       "type": "string",
       "encrypt": true
     },
@@ -55,7 +55,7 @@
     },
     "authHeaderName": {
       "title": "Custom Auth Header Name",
-      "description": "Header name for 'Custom Header' auth type (e.g., X-API-Key, key)",
+      "description": "Header name for 'Custom Header' auth (e.g., X-API-Key, key)",
       "type": "string",
       "default": "X-API-Key"
     },
@@ -73,8 +73,8 @@
       "maximum": 30000
     },
     "bodyTemplate": {
-      "title": "Request Body Template (POST/PUT)",
-      "description": "JSON body for POST/PUT requests. Use {lookup_value} where the lookup value should go. Leave empty for default {\"query\": \"<value>\"}.",
+      "title": "Request Body Template (POST/PUT, single mode)",
+      "description": "JSON body for POST/PUT. Use {lookup_value} placeholder. Leave empty for default.",
       "type": "string",
       "default": ""
     },
@@ -82,12 +82,12 @@
       "title": "Response Handling Mode",
       "type": "string",
       "enum": ["merge_fields", "store_raw", "selective"],
-      "enumNames": ["Merge All Fields (flatten with prefix)", "Store Raw JSON (single field)", "Selective Fields (pick specific fields)"],
+      "enumNames": ["Merge All Fields (flatten with prefix)", "Store Raw JSON", "Selective Fields"],
       "default": "merge_fields"
     },
     "selectedFields": {
       "title": "Selected Response Fields (selective mode)",
-      "description": "Dot-notation paths to extract from the API response (e.g., score, geo.country, tags)",
+      "description": "Dot-notation paths to extract (e.g., score, geo.country, tags)",
       "type": "array",
       "items": { "type": "string" },
       "default": []
@@ -127,6 +127,26 @@
       "description": "Minimum ms between API calls. 0 = no limit.",
       "type": "number",
       "default": 0
+    },
+    "batchEnabled": {
+      "title": "Enable Batch Mode",
+      "description": "Buffer multiple events and send one API call per batch. Reduces API calls but adds latency. Requires a batch-capable API endpoint (like ip-api.com /batch). If disabled, each event makes its own API call.",
+      "type": "boolean",
+      "default": false
+    },
+    "batchSize": {
+      "title": "Batch Size",
+      "description": "Number of events to buffer before making the batch API call. ip-api.com /batch supports up to 100 per call. Only used when Batch Mode is enabled.",
+      "type": "number",
+      "default": 10,
+      "minimum": 2,
+      "maximum": 100
+    },
+    "batchUrl": {
+      "title": "Batch API URL",
+      "description": "Full URL for the batch endpoint. Only used when Batch Mode is enabled. ip-api.com batch endpoint: http://ip-api.com/batch",
+      "type": "string",
+      "default": "http://ip-api.com/batch"
     }
   },
   "required": ["apiBaseUrl", "lookupField"]

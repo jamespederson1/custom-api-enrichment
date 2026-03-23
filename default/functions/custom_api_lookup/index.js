@@ -5,7 +5,7 @@ const { URL } = require('url');
 const cLogger = C.util.getLogger('func:custom_api_lookup');
 
 exports.name = 'Custom API Lookup';
-exports.version = '0.3';
+exports.version = '0.4';
 exports.group = 'Standard';
 
 // --- Configuration state ---
@@ -30,6 +30,12 @@ let cacheTTL = 300;
 let cache = new Map();
 let cacheTimestamps = new Map();
 let staticHeaders = {};
+
+// --- Batch mode state ---
+let batchEnabled = false;
+let batchSize = 10;
+let batchUrl = '';
+let eventBuffer = [];
 
 exports.init = (opts) => {
   const conf = opts.conf || {};
@@ -69,6 +75,12 @@ exports.init = (opts) => {
   cache = new Map();
   cacheTimestamps = new Map();
 
+  // Batch mode
+  batchEnabled = !!conf.batchEnabled;
+  batchSize = parseInt(conf.batchSize, 10) || 10;
+  batchUrl = (conf.batchUrl || 'http://ip-api.com/batch').replace(/\/+$/, '');
+  eventBuffer = [];
+
   // Extra headers
   staticHeaders = {};
   if (conf.staticHeaders && Array.isArray(conf.staticHeaders)) {
@@ -77,27 +89,20 @@ exports.init = (opts) => {
     }
   }
 
-  cLogger.info(`Custom API Lookup initialized: base=${apiBaseUrl}, valuePos=${valuePosition}, field=${lookupField}, auth=${authType}`);
+  cLogger.info(`Custom API Lookup initialized: base=${apiBaseUrl}, batch=${batchEnabled}, batchSize=${batchSize}, field=${lookupField}, auth=${authType}`);
 };
 
 // -------------------------------------------------------
-// URL builder — constructs the full URL from config fields
-// -------------------------------------------------------
-// valuePosition controls how the lookup value is placed:
-//   path:   GET http://ip-api.com/json/8.8.8.8?fields=...
-//   query:  GET http://api.example.com/lookup?q=8.8.8.8
-//   body:   POST http://api.example.com/enrich  (value goes in request body, not URL)
+// URL builder
 // -------------------------------------------------------
 function buildUrl(lookupValue) {
   const encoded = encodeURIComponent(lookupValue);
   let url = apiBaseUrl;
 
-  // Append value to URL path
   if (valuePosition === 'path') {
     url = `${url}/${encoded}`;
   }
 
-  // Build query string
   const params = [];
   if (valuePosition === 'query') {
     params.push(`${encodeURIComponent(queryParamName)}=${encoded}`);
@@ -124,16 +129,15 @@ function buildHeaders() {
     case 'bearer': headers['Authorization'] = `Bearer ${apiKey}`; break;
     case 'header': headers[authHeaderName] = apiKey; break;
     case 'basic': headers['Authorization'] = `Basic ${Buffer.from(apiKey).toString('base64')}`; break;
-    case 'query': break; // handled in buildUrl
+    case 'query': break;
     case 'none': default: break;
   }
   return headers;
 }
 
-// --- Body builder (POST/PUT) ---
+// --- Body builder (POST/PUT single event) ---
 function buildBody(lookupValue) {
   if (bodyTemplate) {
-    // Replace {lookup_value} placeholder in custom body template
     return bodyTemplate.replace(/\{lookup_value\}/g, lookupValue);
   }
   return JSON.stringify({ query: lookupValue });
@@ -155,6 +159,11 @@ function makeRequest(url, method, headers, body) {
       timeout: requestTimeout,
     };
 
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
     const req = transport.request(opts, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -171,10 +180,7 @@ function makeRequest(url, method, headers, body) {
     });
     req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout after ${requestTimeout}ms`)); });
     req.on('error', (e) => reject(e));
-    if (body && (method === 'POST' || method === 'PUT')) {
-      headers['Content-Type'] = 'application/json';
-      req.write(body);
-    }
+    if (body && (method === 'POST' || method === 'PUT')) req.write(body);
     req.end();
   });
 }
@@ -201,7 +207,7 @@ function setCache(key, val) {
   if (cache.size > 10000) { const oldest = cache.keys().next().value; cache.delete(oldest); cacheTimestamps.delete(oldest); }
 }
 
-// --- Enrich event with API response ---
+// --- Enrich a single event with API response data ---
 function enrichEvent(event, apiData) {
   if (!apiData || typeof apiData !== 'object') return;
   switch (responseMode) {
@@ -231,8 +237,92 @@ function enrichEvent(event, apiData) {
   event[enrichPrefix + 'lookup_ts'] = new Date().toISOString();
 }
 
-// --- Main: process each event (async Promise pattern) ---
-exports.process = (event) => {
+// -------------------------------------------------------
+// BATCH MODE: process a batch of buffered events in one API call
+// -------------------------------------------------------
+async function processBatch(batch) {
+  // Separate cached vs uncached events
+  const uncachedEvents = [];
+  const uncachedValues = [];
+
+  for (const ev of batch) {
+    const val = String(ev[lookupField] || '');
+    const cached = getCached(val);
+    if (cached) {
+      enrichEvent(ev, cached);
+      ev[enrichPrefix + 'cache_hit'] = true;
+    } else if (val) {
+      uncachedEvents.push(ev);
+      uncachedValues.push(val);
+    } else {
+      ev[enrichPrefix + 'lookup_status'] = 'skipped';
+      ev[enrichPrefix + 'lookup_reason'] = `Field '${lookupField}' is empty`;
+    }
+  }
+
+  // If all were cached or empty, return immediately
+  if (uncachedEvents.length === 0) return batch;
+
+  try {
+    await rateLimit();
+
+    // Build batch request body
+    // ip-api.com /batch expects an array of objects: [{"query":"8.8.8.8","fields":"..."},...]
+    const batchBody = uncachedValues.map(val => {
+      const item = { query: val };
+      if (extraQueryParams) {
+        // Extract 'fields' param from extraQueryParams for ip-api.com batch format
+        const fieldsMatch = extraQueryParams.match(/fields=([^&]+)/);
+        if (fieldsMatch) item.fields = fieldsMatch[1];
+      }
+      return item;
+    });
+
+    const headers = buildHeaders();
+    let url = batchUrl;
+    if (extraQueryParams && !url.includes('?')) {
+      // For non-ip-api batch endpoints, append extra params to URL
+      const fieldsInBody = extraQueryParams.match(/fields=/);
+      if (!fieldsInBody) {
+        url = `${url}?${extraQueryParams}`;
+      }
+    }
+
+    const data = await makeRequest(url, 'POST', headers, JSON.stringify(batchBody));
+
+    // Match results back to events
+    // ip-api.com /batch returns an array in the same order as the request
+    const results = Array.isArray(data) ? data : [];
+    for (let i = 0; i < uncachedEvents.length; i++) {
+      const ev = uncachedEvents[i];
+      const result = results[i];
+      if (result) {
+        if (result.status === 'fail') {
+          ev[enrichPrefix + 'lookup_status'] = 'api_error';
+          ev[enrichPrefix + 'lookup_error'] = result.message || 'unknown';
+        } else {
+          setCache(uncachedValues[i], result);
+          enrichEvent(ev, result);
+        }
+      } else {
+        ev[enrichPrefix + 'lookup_status'] = 'no_result';
+      }
+    }
+  } catch (err) {
+    cLogger.error(`Batch API lookup failed: ${err.message}`);
+    for (const ev of uncachedEvents) {
+      ev[enrichPrefix + 'lookup_status'] = 'error';
+      ev[enrichPrefix + 'lookup_error'] = err.message;
+    }
+  }
+
+  return batch;
+}
+
+// -------------------------------------------------------
+// SINGLE MODE: process one event with one API call
+// -------------------------------------------------------
+function processSingle(event) {
   const lookupValue = event[lookupField];
   if (!lookupValue) {
     event[enrichPrefix + 'lookup_status'] = 'skipped';
@@ -270,4 +360,40 @@ exports.process = (event) => {
       event[enrichPrefix + 'lookup_error'] = err.message;
       return event;
     });
+}
+
+// -------------------------------------------------------
+// exports.process — called once per event by Cribl
+// -------------------------------------------------------
+exports.process = (event) => {
+  // SINGLE MODE: one HTTP call per event
+  if (!batchEnabled) {
+    return processSingle(event);
+  }
+
+  // BATCH MODE: buffer events, fire when batch is full
+  eventBuffer.push(event);
+  if (eventBuffer.length < batchSize) {
+    // Buffer not full yet — return null to hold the event
+    // Cribl will not forward anything downstream until we return it
+    return null;
+  }
+
+  // Buffer is full — process the batch
+  const currentBatch = [...eventBuffer];
+  eventBuffer = [];
+  return processBatch(currentBatch);
+};
+
+// -------------------------------------------------------
+// exports.flush — called when the stream ends or pipeline closes
+// Without this, the last partial batch (< batchSize events) is DROPPED
+// -------------------------------------------------------
+exports.flush = () => {
+  if (!batchEnabled || eventBuffer.length === 0) return null;
+
+  const finalBatch = [...eventBuffer];
+  eventBuffer = [];
+  cLogger.info(`Flushing final batch of ${finalBatch.length} events`);
+  return processBatch(finalBatch);
 };
