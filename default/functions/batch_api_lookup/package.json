@@ -1,0 +1,8 @@
+{
+  "name": "batch_api_lookup",
+  "version": "0.1.0",
+  "description": "Batch API Lookup for Cribl — batch multiple events into one API call for enrichment",
+  "main": "index.js",
+  "author": "James Pederson",
+  "license": "MIT"
+}

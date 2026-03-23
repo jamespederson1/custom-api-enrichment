@@ -28,3 +28,15 @@ routes:
     filter: "true"
     output: default
     groupId: api_enrichment
+  - id: batch_api
+    name: "Batch API Enrichment"
+    final: true
+    disabled: true
+    pipeline: batch_api_enrichment
+    description: "Aggregate → Batch API Call → Unroll pattern for high-volume sources (VPC Flow Logs)"
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    output: default
+    groupId: api_enrichment

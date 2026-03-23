@@ -1,0 +1,84 @@
+{
+  "type": "object",
+  "title": "",
+  "properties": {
+    "apiBaseUrl": {
+      "title": "Batch API Endpoint URL",
+      "description": "Full URL of the batch API endpoint that accepts POST requests with multiple values. Example: https://api.example.com/v1/batch-lookup",
+      "type": "string"
+    },
+    "lookupField": {
+      "title": "Lookup Field",
+      "description": "Base field name used for aggregation. The function reads from '<field>_batch' (the aggregated array). Example: 'src_ip' reads from 'src_ip_batch' created by the upstream Aggregation function.",
+      "type": "string",
+      "default": "src_ip"
+    },
+    "enrichPrefix": {
+      "title": "Enrichment Field Prefix",
+      "description": "Prefix for enrichment fields. These become arrays that the downstream Unroll function splits back into individual events.",
+      "type": "string",
+      "default": "enrich_"
+    },
+    "apiKey": {
+      "title": "API Key / Token",
+      "description": "API key or token for authentication. Leave empty for no auth.",
+      "type": "string",
+      "encrypt": true
+    },
+    "authType": {
+      "title": "Authentication Type",
+      "type": "string",
+      "enum": ["none", "bearer", "header", "basic"],
+      "enumNames": ["No Authentication", "Bearer Token", "Custom Header", "Basic Auth"],
+      "default": "none"
+    },
+    "authHeaderName": {
+      "title": "Custom Auth Header Name",
+      "type": "string",
+      "default": "Authorization"
+    },
+    "bodyTemplate": {
+      "title": "Request Body Template",
+      "description": "Custom JSON body template. Use {lookup_values} where the array of IPs/values should go. Leave empty for default format: {\"ips\": [\"8.8.8.8\", \"1.1.1.1\"]}. Example: {\"searchParameters\": {lookup_values}, \"responseFields\": [\"accountName\", \"resourceName\"]}",
+      "type": "string",
+      "default": ""
+    },
+    "responseMatchField": {
+      "title": "Response Match Field",
+      "description": "Field name in each result object that matches back to the lookup value (e.g., 'ipAddress', 'ip', 'query'). Used when the API returns results as an array of objects. Leave empty if API returns results in same order as request or keyed by lookup value.",
+      "type": "string",
+      "default": ""
+    },
+    "requestTimeout": {
+      "title": "Request Timeout (ms)",
+      "type": "number",
+      "default": 10000,
+      "minimum": 1000,
+      "maximum": 60000
+    },
+    "allowSelfSigned": {
+      "title": "Allow Self-Signed Certificates",
+      "description": "Enable for internal APIs with self-signed SSL certificates",
+      "type": "boolean",
+      "default": false
+    },
+    "staticHeaders": {
+      "title": "Additional HTTP Headers",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "title": "Header Name", "type": "string" },
+          "value": { "title": "Header Value", "type": "string" }
+        }
+      },
+      "default": []
+    },
+    "cacheTTL": {
+      "title": "Cache TTL (seconds)",
+      "type": "number",
+      "default": 300
+    }
+  },
+  "required": ["apiBaseUrl", "lookupField"]
+}

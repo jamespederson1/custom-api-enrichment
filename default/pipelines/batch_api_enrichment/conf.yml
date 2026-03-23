@@ -1,0 +1,79 @@
+output: default
+groups: {}
+asyncFuncTimeout: 15000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >-
+        Batch API Enrichment Pipeline (Aggregation → Batch Lookup → Unroll)
+        
+        Designed for high-volume sources like VPC Flow Logs where you need to
+        enrich many events with data from an API that supports batch requests.
+        
+        HOW IT WORKS:
+        
+        Step 1 — AGGREGATE: Cribl's built-in Aggregation function collects
+        individual events over a time window and creates arrays:
+          src_ip_batch = ["8.8.8.8", "1.1.1.1", "203.0.113.50"]
+          _raw_batch   = ["{event1...}", "{event2...}", "{event3...}"]
+        
+        Step 2 — BATCH API CALL: The batch_api_lookup custom function reads
+        the array, deduplicates values, makes ONE POST request to the API
+        with all unique IPs, and creates parallel enrichment arrays:
+          enrich_country = ["United States", "Australia", "United States"]
+          enrich_org     = ["Google LLC", "Cloudflare", "Example Corp"]
+        
+        Step 3 — UNROLL: Cribl's built-in Unroll function splits the arrays
+        back into individual events, each with its matching enrichment data.
+        
+        RESULT: N events in → 1 API call → N enriched events out
+        
+        CONFIGURE:
+        1. Edit the Aggregation time window and batch size for your volume
+        2. Edit the batch_api_lookup function with your API URL and auth
+        3. Adjust the Unroll source expression if you changed field names
+
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - list(src_ip).as(src_ip_batch)
+        - list(_raw).as(_raw_batch)
+        - list(_time).as(_time_batch)
+      cumulative: false
+      flushOnInputClose: true
+    description: "Collect events into batches over a 10-second window. Creates src_ip_batch array for the API call and _raw_batch / _time_batch for unrolling back to individual events."
+
+  - id: batch_api_lookup
+    filter: "true"
+    disabled: null
+    conf:
+      apiBaseUrl: "https://your-batch-api.example.com/v1/batch-lookup"
+      lookupField: src_ip
+      enrichPrefix: "enrich_"
+      apiKey: ""
+      authType: none
+      authHeaderName: "Authorization"
+      bodyTemplate: ""
+      responseMatchField: ""
+      requestTimeout: 10000
+      allowSelfSigned: false
+      staticHeaders: []
+      cacheTTL: 300
+    description: "POST all unique IPs from the batch to the API in one request. Enrichment results are mapped back as parallel arrays."
+
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw_batch
+      dstField: _raw
+    description: "Split the aggregated batch back into individual events. Each event gets its original _raw plus the matching enrichment fields at the same array index."
