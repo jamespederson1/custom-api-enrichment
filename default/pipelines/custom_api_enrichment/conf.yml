@@ -7,22 +7,25 @@ functions:
     disabled: false
     conf:
       comment: >-
-        Custom API Enrichment Pipeline.
-        Calls ip-api.com (free, no auth) to enrich events with IP geolocation
-        as data flows through the pipeline. Uses async custom function with
-        in-memory caching to minimize API calls.
+        ip-api.com Geolocation Enrichment Pipeline.
+        Enriches events with IP geolocation as data flows through Cribl Stream.
+        Free API, no auth required.
         
-        To adapt for your own API: edit the custom_api_lookup function settings below.
+        Resulting URL per event: http://ip-api.com/json/8.8.8.8?fields=status,message,...
+        The lookup value from src_ip is appended to the Base URL path automatically.
   - id: custom_api_lookup
     filter: "true"
     disabled: null
     conf:
-      apiUrl: "http://ip-api.com/json/{{value}}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
+      apiBaseUrl: "http://ip-api.com/json"
+      valuePosition: path
+      queryParamName: "q"
+      extraQueryParams: "fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
+      lookupField: src_ip
+      enrichPrefix: "geo_"
       apiKey: ""
       authType: none
       authHeaderName: "X-API-Key"
-      lookupField: src_ip
-      enrichPrefix: "geo_"
       requestMethod: GET
       requestTimeout: 5000
       bodyTemplate: ""
@@ -32,4 +35,4 @@ functions:
       staticHeaders: []
       cacheTTL: 300
       rateLimitMs: 0
-    description: "Enrich events with IP geolocation from ip-api.com (adaptable to any REST API)"
+    description: "Enrich events with IP geolocation from ip-api.com"

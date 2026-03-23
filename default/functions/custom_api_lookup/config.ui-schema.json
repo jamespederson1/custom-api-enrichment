@@ -6,6 +6,9 @@
   "bodyTemplate": {
     "ui:widget": "textarea",
     "ui:options": { "rows": 4 },
-    "ui:placeholder": "{\"query\": \"{{value}}\", \"type\": \"ip\"}"
+    "ui:placeholder": "{\"query\": \"{lookup_value}\", \"type\": \"ip\"}"
+  },
+  "extraQueryParams": {
+    "ui:placeholder": "fields=status,country,city,isp&format=json"
   }
 }
