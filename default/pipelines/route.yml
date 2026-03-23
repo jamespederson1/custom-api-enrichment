@@ -1,15 +1,30 @@
 id: default
 groups:
   api_enrichment:
-    name: API Enrichment
+    name: API Enrichment Demos
     index: 0
+  templates:
+    name: Templates
+    index: 1
 routes:
-  - id: ipapi_geolocation
-    name: "ip-api.com Geolocation"
+  - id: single_mode_demo
+    name: "Single Mode — ip-api.com (1 call per event)"
     final: true
     disabled: false
     pipeline: custom_api_enrichment
-    description: "Enrich events with IP geolocation from ip-api.com (free, no auth, ready to test)"
+    description: "Demo: each event makes its own API call. Use single_mode_sample.json (3 events)."
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    output: default
+    groupId: api_enrichment
+  - id: batch_mode_demo
+    name: "Batch Mode — ip-api.com (1 call per 6 events)"
+    final: true
+    disabled: true
+    pipeline: batch_api_enrichment
+    description: "Demo: buffers 6 events, one batch POST. Use batch_mode_sample.json (12 events). Enable this and disable Single Mode to test."
     clones: []
     enableOutputExpression: false
     outputExpression: null
@@ -17,26 +32,14 @@ routes:
     output: default
     groupId: api_enrichment
   - id: generic_api
-    name: "Generic API Enrichment"
+    name: "Generic API Template"
     final: true
     disabled: true
     pipeline: generic_api_enrichment
-    description: "Template — configure your own API endpoint, auth, and field mapping"
+    description: "Template: configure your own API endpoint, auth, and field mapping"
     clones: []
     enableOutputExpression: false
     outputExpression: null
     filter: "true"
     output: default
-    groupId: api_enrichment
-  - id: batch_api
-    name: "Batch API Enrichment"
-    final: true
-    disabled: true
-    pipeline: batch_api_enrichment
-    description: "Aggregate → Batch API Call → Unroll pattern for high-volume sources (VPC Flow Logs)"
-    clones: []
-    enableOutputExpression: false
-    outputExpression: null
-    filter: "true"
-    output: default
-    groupId: api_enrichment
+    groupId: templates
