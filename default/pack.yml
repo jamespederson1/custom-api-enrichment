@@ -1,15 +1,15 @@
 id: custom-api-enrichment
 displayName: Custom API Enrichment
 description: >-
-  Enrich Cribl Stream pipeline events with IP geolocation data from ip-api.com.
-  Uses built-in Code function (no custom functions) so it works on Cribl Cloud managed workers.
-  Data is enriched inline as events traverse the stream — no batch collection needed.
-  Includes in-memory caching to reduce API calls for repeated IPs.
-  Easily adaptable to any REST API by changing the URL, auth, and field mapping in the Code function.
-version: 0.2.0
+  Enrich Cribl Stream pipeline events inline with IP geolocation from ip-api.com.
+  Uses async custom function (Nightfall pattern) with Promises for outbound HTTP.
+  Requires on-prem or hybrid workers (custom functions blocked on Cloud managed workers).
+  Includes in-memory caching, rate limiting, and configurable auth/response handling.
+version: 0.3.0
 author: James Pederson
 tags:
   - enrichment
   - api
   - geolocation
   - ip-lookup
+  - custom-function

@@ -1,0 +1,8 @@
+{
+  "name": "custom_api_lookup",
+  "version": "0.2.0",
+  "description": "Custom API Lookup for Cribl — enrich events by calling any REST API endpoint inline",
+  "main": "index.js",
+  "author": "James Pederson",
+  "license": "MIT"
+}

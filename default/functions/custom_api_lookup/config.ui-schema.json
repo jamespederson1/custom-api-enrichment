@@ -1,0 +1,11 @@
+{
+  "apiKey": {
+    "ui:widget": "password",
+    "ui:placeholder": "Enter API key (leave empty for ip-api.com)"
+  },
+  "bodyTemplate": {
+    "ui:widget": "textarea",
+    "ui:options": { "rows": 4 },
+    "ui:placeholder": "{\"query\": \"{{value}}\", \"type\": \"ip\"}"
+  }
+}

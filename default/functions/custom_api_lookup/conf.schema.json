@@ -1,0 +1,113 @@
+{
+  "type": "object",
+  "title": "",
+  "properties": {
+    "apiUrl": {
+      "title": "API Endpoint URL",
+      "description": "Full URL with {{value}} placeholder. Default: ip-api.com geolocation.",
+      "type": "string",
+      "default": "http://ip-api.com/json/{{value}}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
+    },
+    "apiKey": {
+      "title": "API Key / Token",
+      "description": "API key or token. Leave empty for APIs that don't require auth (like ip-api.com).",
+      "type": "string",
+      "encrypt": true
+    },
+    "authType": {
+      "title": "Authentication Type",
+      "type": "string",
+      "enum": ["none", "bearer", "header", "query", "basic"],
+      "enumNames": ["No Authentication", "Bearer Token", "Custom Header", "Query Parameter", "Basic Auth"],
+      "default": "none"
+    },
+    "authHeaderName": {
+      "title": "Custom Auth Header Name",
+      "description": "Header name for 'Custom Header' auth (e.g., X-API-Key, key)",
+      "type": "string",
+      "default": "X-API-Key"
+    },
+    "lookupField": {
+      "title": "Lookup Field",
+      "description": "Event field to send to the API (e.g., src_ip, ip, hostname, hash)",
+      "type": "string",
+      "default": "src_ip"
+    },
+    "enrichPrefix": {
+      "title": "Enrichment Field Prefix",
+      "description": "Prefix for all enrichment fields added to events",
+      "type": "string",
+      "default": "geo_"
+    },
+    "requestMethod": {
+      "title": "HTTP Method",
+      "type": "string",
+      "enum": ["GET", "POST", "PUT"],
+      "default": "GET"
+    },
+    "requestTimeout": {
+      "title": "Request Timeout (ms)",
+      "type": "number",
+      "default": 5000,
+      "minimum": 500,
+      "maximum": 30000
+    },
+    "bodyTemplate": {
+      "title": "Request Body Template (POST/PUT)",
+      "description": "JSON body with {{value}} placeholder. Leave empty for default.",
+      "type": "string",
+      "default": ""
+    },
+    "responseMode": {
+      "title": "Response Handling Mode",
+      "type": "string",
+      "enum": ["merge_fields", "store_raw", "selective"],
+      "enumNames": ["Merge All Fields (flatten with prefix)", "Store Raw JSON", "Selective Fields"],
+      "default": "merge_fields"
+    },
+    "selectedFields": {
+      "title": "Selected Response Fields (selective mode)",
+      "description": "Dot-notation paths to extract from the API response",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "fieldMappings": {
+      "title": "Field Mappings (selective mode)",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "src": { "title": "Source Field", "type": "string" },
+          "dst": { "title": "Destination Field", "type": "string" }
+        }
+      },
+      "default": []
+    },
+    "staticHeaders": {
+      "title": "Additional HTTP Headers",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "title": "Header Name", "type": "string" },
+          "value": { "title": "Header Value", "type": "string" }
+        }
+      },
+      "default": []
+    },
+    "cacheTTL": {
+      "title": "Cache TTL (seconds)",
+      "description": "Cache duration. 0 = no caching.",
+      "type": "number",
+      "default": 300
+    },
+    "rateLimitMs": {
+      "title": "Rate Limit (ms between requests)",
+      "description": "Min ms between API calls. 0 = no limit.",
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": ["apiUrl", "lookupField"]
+}
