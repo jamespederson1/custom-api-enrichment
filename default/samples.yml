@@ -1,0 +1,10 @@
+singleM1:
+  sampleName: single_mode_3_events.json
+  created: 1711152000000
+  size: 620
+  numEvents: 3
+batchM1:
+  sampleName: batch_mode_12_events.json
+  created: 1711152000000
+  size: 2480
+  numEvents: 12
