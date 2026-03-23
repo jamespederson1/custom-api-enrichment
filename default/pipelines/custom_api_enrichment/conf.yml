@@ -8,27 +8,176 @@ functions:
     conf:
       comment: >-
         Custom API Enrichment Pipeline.
-        Sends a configurable event field to a custom REST API endpoint
-        and merges the response data back into the event.
-        Supports GET/POST, multiple auth types, response field selection,
-        caching, and rate limiting.
-  - id: custom_api_lookup
+        Uses Cribl's built-in Code function to call ip-api.com for
+        IP geolocation enrichment as events traverse the stream.
+        No custom functions needed — works on Cribl Cloud managed workers.
+        
+        How it works:
+        1. Extracts the IP from the configured lookup field (default: src_ip)
+        2. Makes an HTTP GET request to ip-api.com/json/<ip>
+        3. Merges geolocation fields (country, city, ISP, org, lat/lon, etc.)
+           back into the event with a configurable prefix
+        4. Includes in-memory caching to avoid duplicate lookups
+        
+        To adapt for a different API:
+        - Change the URL in buildUrl()
+        - Change the auth headers in buildHeaders()
+        - Change the field mapping in enrichEvent()
+  - id: code
     filter: "true"
-    disabled: null
+    disabled: false
     conf:
-      apiUrl: "https://api.example.com/lookup/{{value}}"
-      apiKey: ""
-      authType: bearer
-      authHeaderName: "X-API-Key"
-      lookupField: ip
-      enrichPrefix: "enrichment_"
-      requestMethod: GET
-      requestTimeout: 5000
-      bodyTemplate: ""
-      responseMode: merge_fields
-      selectedFields: []
-      fieldMappings: []
-      staticHeaders: []
-      cacheTTL: 300
-      rateLimitMs: 0
-    description: "Call custom API endpoint to enrich events with external data"
+      maxNumOfIterations: 5000
+      code: |-
+        // ================================================
+        // Custom API Enrichment — ip-api.com Geolocation
+        // ================================================
+        // Enriches events with IP geolocation data from ip-api.com (free, no auth)
+        // Returns: country, city, region, ISP, org, AS, lat, lon, timezone, etc.
+        //
+        // To adapt for your own API:
+        //   1. Change the URL in the fetch call below
+        //   2. Add auth headers if needed (Bearer, API key, etc.)
+        //   3. Adjust the field mapping in the enrichment section
+        // ================================================
+
+        const http = require('http');
+        const https = require('https');
+        const { URL } = require('url');
+
+        // --- CONFIGURATION (edit these for your use case) ---
+        const LOOKUP_FIELD = 'src_ip';           // Event field containing the IP to look up
+        const ENRICH_PREFIX = 'geo_';            // Prefix for all enrichment fields
+        const API_URL_TEMPLATE = 'http://ip-api.com/json/{{value}}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query';
+        const REQUEST_TIMEOUT = 5000;            // ms
+        const CACHE_TTL = 300;                   // seconds (0 = no cache)
+
+        // --- In-memory cache (persists across events within the pipeline) ---
+        if (!C.vars.__enrichCache) {
+          C.vars.__enrichCache = {};
+          C.vars.__enrichCacheTs = {};
+        }
+        const cache = C.vars.__enrichCache;
+        const cacheTs = C.vars.__enrichCacheTs;
+
+        function getCached(key) {
+          if (CACHE_TTL <= 0) return null;
+          const ts = cacheTs[key];
+          if (ts && (Date.now() - ts) < CACHE_TTL * 1000) return cache[key];
+          delete cache[key];
+          delete cacheTs[key];
+          return null;
+        }
+
+        function setCache(key, val) {
+          if (CACHE_TTL <= 0) return;
+          cache[key] = val;
+          cacheTs[key] = Date.now();
+          // Evict if cache grows too large
+          const keys = Object.keys(cache);
+          if (keys.length > 10000) {
+            delete cache[keys[0]];
+            delete cacheTs[keys[0]];
+          }
+        }
+
+        // --- Build the API URL ---
+        function buildUrl(lookupValue) {
+          return API_URL_TEMPLATE.replace(/\{\{value\}\}/g, encodeURIComponent(lookupValue));
+        }
+
+        // --- Make HTTP request returning a Promise ---
+        function makeRequest(url) {
+          return new Promise((resolve, reject) => {
+            let parsedUrl;
+            try { parsedUrl = new URL(url); } catch(e) { return reject(e); }
+            const transport = parsedUrl.protocol === 'https:' ? https : http;
+            const opts = {
+              hostname: parsedUrl.hostname,
+              port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+              path: parsedUrl.pathname + parsedUrl.search,
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'CriblStream/1.0'
+                // --- ADD AUTH HEADERS HERE for your API ---
+                // 'Authorization': 'Bearer YOUR_TOKEN',
+                // 'X-API-Key': 'YOUR_KEY',
+              },
+              timeout: REQUEST_TIMEOUT
+            };
+            const req = transport.request(opts, (res) => {
+              let data = '';
+              res.on('data', (chunk) => { data += chunk; });
+              res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                  try { resolve(JSON.parse(data)); }
+                  catch(e) { reject(new Error('JSON parse error: ' + e.message)); }
+                } else {
+                  reject(new Error('HTTP ' + res.statusCode));
+                }
+              });
+            });
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.on('error', (e) => reject(e));
+            req.end();
+          });
+        }
+
+        // --- Enrich the event with API response ---
+        function enrichEvent(event, data) {
+          // ip-api.com returns flat fields — map them with prefix
+          const fields = ['country','countryCode','region','regionName','city',
+                          'zip','lat','lon','timezone','isp','org','as','query'];
+          for (const f of fields) {
+            if (data[f] !== undefined && data[f] !== null) {
+              event[ENRICH_PREFIX + f] = data[f];
+            }
+          }
+          event[ENRICH_PREFIX + 'status'] = 'success';
+          event[ENRICH_PREFIX + 'timestamp'] = new Date().toISOString();
+        }
+
+        // --- Main: process the event ---
+        try {
+          const lookupValue = __e[LOOKUP_FIELD];
+          if (!lookupValue) {
+            __e[ENRICH_PREFIX + 'status'] = 'skipped';
+            __e[ENRICH_PREFIX + 'reason'] = 'Field ' + LOOKUP_FIELD + ' is empty';
+            return __e;
+          }
+
+          const lookupStr = String(lookupValue);
+
+          // Check cache
+          const cached = getCached(lookupStr);
+          if (cached) {
+            enrichEvent(__e, cached);
+            __e[ENRICH_PREFIX + 'cache_hit'] = true;
+            return __e;
+          }
+
+          // Make the API call (async — return Promise)
+          const url = buildUrl(lookupStr);
+          return makeRequest(url)
+            .then((apiData) => {
+              if (apiData.status === 'fail') {
+                __e[ENRICH_PREFIX + 'status'] = 'api_error';
+                __e[ENRICH_PREFIX + 'error'] = apiData.message || 'unknown';
+                return __e;
+              }
+              setCache(lookupStr, apiData);
+              enrichEvent(__e, apiData);
+              return __e;
+            })
+            .catch((err) => {
+              __e[ENRICH_PREFIX + 'status'] = 'error';
+              __e[ENRICH_PREFIX + 'error'] = err.message;
+              return __e;
+            });
+        } catch (err) {
+          __e[ENRICH_PREFIX + 'status'] = 'error';
+          __e[ENRICH_PREFIX + 'error'] = err.message;
+          return __e;
+        }
+    description: "Call ip-api.com to enrich events with IP geolocation as data flows through the pipeline"

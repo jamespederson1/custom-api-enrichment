@@ -1,0 +1,13 @@
+{
+  "name": "custom-api-enrichment",
+  "version": "0.2.0",
+  "author": "James Pederson",
+  "description": "Inline API enrichment for Cribl Stream — enrich events with IP geolocation from ip-api.com as data flows through pipelines. Uses built-in Code function, compatible with Cribl Cloud.",
+  "displayName": "Custom API Enrichment",
+  "tags": {
+    "streamtags": ["enrichment", "api", "geolocation", "ip-lookup"],
+    "useCase": ["enrichment"],
+    "dataType": ["logs"]
+  },
+  "exports": ["*"]
+}
