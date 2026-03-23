@@ -1,0 +1,13 @@
+{
+  "apiKey": {
+    "ui:widget": "password",
+    "ui:placeholder": "Enter your API key or token"
+  },
+  "bodyTemplate": {
+    "ui:widget": "textarea",
+    "ui:options": {
+      "rows": 4
+    },
+    "ui:placeholder": "{\"query\": \"{{value}}\", \"type\": \"ip\"}"
+  }
+}

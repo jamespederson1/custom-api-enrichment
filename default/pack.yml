@@ -1,0 +1,15 @@
+id: custom-api-enrichment
+displayName: Custom API Enrichment
+description: >-
+  Enrich Cribl pipeline events by calling any custom REST API endpoint.
+  Supports GET/POST methods, multiple authentication types (Bearer, Header, Basic, Query Param),
+  configurable response handling (merge all fields, store raw, or select specific fields),
+  in-memory caching, rate limiting, and custom field mappings.
+  Modeled after the Nightfall DLP custom function approach for maximum flexibility.
+version: 0.1.0
+author: Cribl Pack Builder
+tags:
+  - enrichment
+  - api
+  - lookup
+  - custom-function

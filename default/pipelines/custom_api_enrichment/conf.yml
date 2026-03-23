@@ -1,0 +1,34 @@
+output: default
+groups: {}
+asyncFuncTimeout: 10000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >-
+        Custom API Enrichment Pipeline.
+        Sends a configurable event field to a custom REST API endpoint
+        and merges the response data back into the event.
+        Supports GET/POST, multiple auth types, response field selection,
+        caching, and rate limiting.
+  - id: custom_api_lookup
+    filter: "true"
+    disabled: null
+    conf:
+      apiUrl: "https://api.example.com/lookup/{{value}}"
+      apiKey: ""
+      authType: bearer
+      authHeaderName: "X-API-Key"
+      lookupField: ip
+      enrichPrefix: "enrichment_"
+      requestMethod: GET
+      requestTimeout: 5000
+      bodyTemplate: ""
+      responseMode: merge_fields
+      selectedFields: []
+      fieldMappings: []
+      staticHeaders: []
+      cacheTTL: 300
+      rateLimitMs: 0
+    description: "Call custom API endpoint to enrich events with external data"

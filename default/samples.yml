@@ -1,0 +1,4 @@
+samples:
+  custom_api_enrichment_sample:
+    description: "Sample firewall/proxy events with IP addresses for API enrichment"
+    fileType: json

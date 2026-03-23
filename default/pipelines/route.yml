@@ -1,0 +1,14 @@
+id: default
+groups: {}
+routes:
+  - id: default
+    name: Custom API Enrichment
+    final: true
+    disabled: false
+    pipeline: custom_api_enrichment
+    description: "Enrich events via custom API lookup"
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    output: default
