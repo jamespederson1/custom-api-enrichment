@@ -1,14 +1,30 @@
 id: default
-groups: {}
+groups:
+  api_enrichment:
+    name: API Enrichment
+    index: 0
 routes:
-  - id: default
-    name: Custom API Enrichment
+  - id: ipapi_geolocation
+    name: "ip-api.com Geolocation"
     final: true
     disabled: false
     pipeline: custom_api_enrichment
-    description: "Enrich events via custom API lookup"
+    description: "Enrich events with IP geolocation from ip-api.com (free, no auth, ready to test)"
     clones: []
     enableOutputExpression: false
     outputExpression: null
     filter: "true"
     output: default
+    groupId: api_enrichment
+  - id: generic_api
+    name: "Generic API Enrichment"
+    final: true
+    disabled: true
+    pipeline: generic_api_enrichment
+    description: "Template — configure your own API endpoint, auth, and field mapping"
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: "true"
+    output: default
+    groupId: api_enrichment

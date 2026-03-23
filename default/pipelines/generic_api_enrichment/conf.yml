@@ -1,0 +1,55 @@
+output: default
+groups: {}
+asyncFuncTimeout: 10000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >-
+        Generic API Enrichment Pipeline.
+        Template pipeline for calling any custom REST API endpoint to enrich
+        events inline as they traverse Cribl Stream.
+
+        CONFIGURATION:
+        Edit the custom_api_lookup function settings below to point at your API.
+        All settings are exposed in the Cribl UI when you click the function.
+
+        COMMON PATTERNS:
+        - Threat intel lookup:  apiUrl = https://api.threatintel.com/v1/ip/{{value}}
+        - CMDB enrichment:      apiUrl = https://cmdb.internal.com/api/asset?ip={{value}}
+        - User identity:        apiUrl = https://identity.corp.com/v2/user/{{value}}, lookupField = username
+        - Hash reputation:      apiUrl = https://api.hashcheck.com/lookup/{{value}}, lookupField = file_hash
+        - GeoIP:                apiUrl = http://ip-api.com/json/{{value}} (free, no auth)
+
+        AUTH TYPES:
+        - none:    No authentication (public APIs like ip-api.com)
+        - bearer:  Authorization: Bearer <token>
+        - header:  Custom header name with API key (e.g., X-API-Key, key)
+        - basic:   Authorization: Basic <base64(user:pass)>
+        - query:   API key appended as ?api_key=<key> query parameter
+
+        RESPONSE MODES:
+        - merge_fields: Flatten all top-level response keys with prefix (default)
+        - store_raw:    Store entire JSON response as single field
+        - selective:    Pick specific dot-notation paths from response
+  - id: custom_api_lookup
+    filter: "true"
+    disabled: null
+    conf:
+      apiUrl: "https://your-api.example.com/v1/lookup/{{value}}"
+      apiKey: ""
+      authType: bearer
+      authHeaderName: "X-API-Key"
+      lookupField: src_ip
+      enrichPrefix: "enrich_"
+      requestMethod: GET
+      requestTimeout: 5000
+      bodyTemplate: ""
+      responseMode: merge_fields
+      selectedFields: []
+      fieldMappings: []
+      staticHeaders: []
+      cacheTTL: 300
+      rateLimitMs: 100
+    description: "Generic API enrichment — edit settings above to point at your API endpoint"
