@@ -130,13 +130,13 @@
     },
     "batchEnabled": {
       "title": "Enable Batch Mode",
-      "description": "Buffer multiple events and send one API call per batch. Reduces API calls but adds latency. Requires a batch-capable API endpoint (like ip-api.com /batch). If disabled, each event makes its own API call.",
+      "description": "Buffer events and send one batch API call. In Data Preview, events process sequentially so batching appears like single mode. In live traffic with concurrent workers, batches fill properly and reduce API calls. Requires a batch-capable endpoint.",
       "type": "boolean",
       "default": false
     },
     "batchSize": {
       "title": "Batch Size",
-      "description": "Number of events to buffer before making the batch API call. ip-api.com /batch supports up to 100 per call. Only used when Batch Mode is enabled.",
+      "description": "Events to buffer before firing batch API call. ip-api.com /batch supports up to 100.",
       "type": "number",
       "default": 10,
       "minimum": 2,
@@ -144,9 +144,17 @@
     },
     "batchUrl": {
       "title": "Batch API URL",
-      "description": "Full URL for the batch endpoint. Only used when Batch Mode is enabled. ip-api.com batch endpoint: http://ip-api.com/batch",
+      "description": "Full URL for the batch endpoint. ip-api.com: http://ip-api.com/batch",
       "type": "string",
       "default": "http://ip-api.com/batch"
+    },
+    "batchTimeoutMs": {
+      "title": "Batch Timeout (ms)",
+      "description": "Max milliseconds to wait for a full batch before firing a partial batch. Prevents events from hanging if traffic is slow. Default 2000ms.",
+      "type": "number",
+      "default": 2000,
+      "minimum": 500,
+      "maximum": 30000
     }
   },
   "required": ["apiBaseUrl", "lookupField"]

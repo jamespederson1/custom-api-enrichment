@@ -13,21 +13,21 @@ functions:
         - Events are buffered until batchSize (6) events accumulate
         - One POST request is made to ip-api.com/batch with all IPs
         - Response array is matched back to events in order
-        - All buffered events are returned together (array of events)
-        - exports.flush() handles the final partial batch at end-of-stream
+        - A 2-second timer auto-fires partial batches so events don't hang
 
-        Example: 12 events flow in → 2 batch API calls of 6 each
-          POST http://ip-api.com/batch
-          Body: [{"query":"8.8.8.8","fields":"..."},{"query":"1.1.1.1","fields":"..."},...]
+        IMPORTANT — Data Preview vs Live Traffic:
+        In Data Preview, Cribl processes events SEQUENTIALLY — it waits for each
+        event's Promise to resolve before sending the next one. This means the
+        batch never fills up and each event fires individually (like single mode).
+        
+        In LIVE TRAFFIC with concurrent worker threads, multiple events arrive
+        simultaneously and the batch accumulates properly, making one API call
+        for N events. This is where batch mode shows its real value.
+        
+        To verify batch behavior, check the worker logs during live traffic for
+        messages like "Custom API Lookup v0.5" showing the batch configuration.
 
-        Use the included sample: data/samples/batch_mode_sample.json (12 events)
-        Expected output: all 12 events get geo_ fields, but only 2 API calls are made
-
-        KEY BEHAVIORS TO OBSERVE:
-        - In Data Preview: events 1-5 show no output, event 6 outputs all 6 at once
-        - Events 7-11 show no output, event 12 outputs all 6 at once
-        - If the batch were 7 events, flush() would emit the final 5 at stream end
-        - Cached IPs (duplicates) are resolved from cache, not sent to the API
+        Use sample: data/samples/batch_mode_12_events.json (12 events)
   - id: custom_api_lookup
     filter: "true"
     disabled: null
@@ -53,4 +53,5 @@ functions:
       batchEnabled: true
       batchSize: 6
       batchUrl: "http://ip-api.com/batch"
-    description: "Batch mode: buffer 6 events, one POST to ip-api.com/batch per batch"
+      batchTimeoutMs: 2000
+    description: "Batch mode: buffers events, one POST to ip-api.com/batch per batch (batching works in live traffic, sequential in Preview)"
