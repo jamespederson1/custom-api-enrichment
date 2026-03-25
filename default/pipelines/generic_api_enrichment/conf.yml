@@ -44,9 +44,9 @@ functions:
       requestTimeout: 5000
       bodyTemplate: ""
       responseMode: merge_fields
-      selectedFields: []
-      fieldMappings: []
-      staticHeaders: []
+      selectedFields: ""
+      fieldMappings: ""
+      staticHeaders: ""
       cacheTTL: 300
       rateLimitMs: 100
     description: "Generic API enrichment — edit Base URL, auth, and field settings for your API"

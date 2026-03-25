@@ -87,34 +87,21 @@
     },
     "selectedFields": {
       "title": "Selected Response Fields (selective mode)",
-      "description": "Dot-notation paths to extract (e.g., score, geo.country, tags)",
-      "type": "array",
-      "items": { "type": "string" },
-      "default": []
+      "description": "Comma-separated dot-notation paths to extract from the API response. Example: score,geo.country,tags,metadata.org",
+      "type": "string",
+      "default": ""
     },
     "fieldMappings": {
       "title": "Field Mappings (selective mode)",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "src": { "title": "Source Field", "type": "string" },
-          "dst": { "title": "Destination Field", "type": "string" }
-        }
-      },
-      "default": []
+      "description": "Comma-separated source=destination pairs to rename response fields. Example: geo.country=country,metadata.org=organization",
+      "type": "string",
+      "default": ""
     },
     "staticHeaders": {
       "title": "Additional HTTP Headers",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": { "title": "Header Name", "type": "string" },
-          "value": { "title": "Header Value", "type": "string" }
-        }
-      },
-      "default": []
+      "description": "Comma-separated name:value pairs for extra request headers. Example: X-Custom:myvalue,User-Agent:MyApp/1.0",
+      "type": "string",
+      "default": ""
     },
     "cacheTTL": {
       "title": "Cache TTL (seconds)",
@@ -130,13 +117,13 @@
     },
     "batchEnabled": {
       "title": "Enable Batch Mode",
-      "description": "Buffer events and send one batch API call. In Data Preview, events process sequentially so batching appears like single mode. In live traffic with concurrent workers, batches fill properly and reduce API calls. Requires a batch-capable endpoint.",
+      "description": "Buffer events and send one batch API call. In Data Preview events process sequentially so batching appears like single mode. In live traffic with concurrent workers batches fill properly. Requires a batch-capable endpoint.",
       "type": "boolean",
       "default": false
     },
     "batchSize": {
       "title": "Batch Size",
-      "description": "Events to buffer before firing batch API call. Note: ip-api.com /batch supports up to 100 per call, but custom API endpoints may support larger batches. Set according to your API's limits.",
+      "description": "Events to buffer before firing batch API call. ip-api.com /batch supports up to 100. Custom endpoints may support up to 5000.",
       "type": "number",
       "default": 10,
       "minimum": 2,
@@ -150,7 +137,7 @@
     },
     "batchTimeoutMs": {
       "title": "Batch Timeout (ms)",
-      "description": "Max milliseconds to wait for a full batch before firing a partial batch. Prevents events from hanging if traffic is slow. For large batch sizes, increase this value. Default 2000ms.",
+      "description": "Max ms to wait for a full batch before firing a partial batch. Default 2000ms.",
       "type": "number",
       "default": 2000,
       "minimum": 500,

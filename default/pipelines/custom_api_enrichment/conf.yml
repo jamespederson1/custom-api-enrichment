@@ -37,9 +37,9 @@ functions:
       requestTimeout: 5000
       bodyTemplate: ""
       responseMode: merge_fields
-      selectedFields: []
-      fieldMappings: []
-      staticHeaders: []
+      selectedFields: ""
+      fieldMappings: ""
+      staticHeaders: ""
       cacheTTL: 300
       rateLimitMs: 0
       batchEnabled: false

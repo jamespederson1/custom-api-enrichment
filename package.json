@@ -1,6 +1,6 @@
 {
   "name": "custom-api-enrichment",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "James Pederson",
   "description": "Inline API enrichment for Cribl Stream — single mode and batch mode (up to 5000 events per batch). Custom function with async HTTP, caching, rate limiting, and exports.flush().",
   "displayName": "Custom API Enrichment",

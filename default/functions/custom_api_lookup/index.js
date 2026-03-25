@@ -5,7 +5,7 @@ const { URL } = require('url');
 const cLogger = C.util.getLogger('func:custom_api_lookup');
 
 exports.name = 'Custom API Lookup';
-exports.version = '0.6';
+exports.version = '0.7';
 exports.group = 'Standard';
 
 // --- Configuration state ---
@@ -39,8 +39,6 @@ let pendingBatch = [];
 let batchTimer = null;
 let batchTimeoutMs = 2000;
 
-// Cache eviction threshold — set higher than max batchSize to avoid
-// evicting entries mid-stream when processing large batches
 const CACHE_MAX_ENTRIES = 50000;
 
 exports.init = (opts) => {
@@ -58,11 +56,30 @@ exports.init = (opts) => {
   requestTimeout = parseInt(conf.requestTimeout, 10) || 5000;
   bodyTemplate = conf.bodyTemplate || '';
   responseMode = conf.responseMode || 'merge_fields';
-  selectedFields = conf.selectedFields || [];
-  fieldMapping = {};
-  if (conf.fieldMappings && Array.isArray(conf.fieldMappings)) {
-    for (const m of conf.fieldMappings) { if (m.src && m.dst) fieldMapping[m.src] = m.dst; }
+
+  // Parse selectedFields from comma-separated string
+  // Format: "score,geo.country,tags"
+  selectedFields = [];
+  const sfStr = conf.selectedFields || '';
+  if (sfStr && typeof sfStr === 'string') {
+    selectedFields = sfStr.split(',').map(s => s.trim()).filter(s => s);
+  } else if (Array.isArray(sfStr)) {
+    selectedFields = sfStr; // backward compat
   }
+
+  // Parse fieldMappings from comma-separated string
+  // Format: "geo.country=country,metadata.org=organization"
+  fieldMapping = {};
+  const fmStr = conf.fieldMappings || '';
+  if (fmStr && typeof fmStr === 'string') {
+    fmStr.split(',').map(s => s.trim()).filter(s => s).forEach(pair => {
+      const [src, dst] = pair.split('=').map(s => s.trim());
+      if (src && dst) fieldMapping[src] = dst;
+    });
+  } else if (Array.isArray(fmStr)) {
+    for (const m of fmStr) { if (m.src && m.dst) fieldMapping[m.src] = m.dst; } // backward compat
+  }
+
   rateLimitMs = parseInt(conf.rateLimitMs, 10) || 0;
   lastRequestTime = 0;
   cacheTTL = parseInt(conf.cacheTTL, 10) || 300;
@@ -74,11 +91,23 @@ exports.init = (opts) => {
   batchTimeoutMs = parseInt(conf.batchTimeoutMs, 10) || 2000;
   pendingBatch = [];
   batchTimer = null;
+
+  // Parse staticHeaders from comma-separated string
+  // Format: "X-Custom:myvalue,User-Agent:MyApp/1.0"
   staticHeaders = {};
-  if (conf.staticHeaders && Array.isArray(conf.staticHeaders)) {
-    for (const h of conf.staticHeaders) { if (h.name && h.value) staticHeaders[h.name] = h.value; }
+  const shStr = conf.staticHeaders || '';
+  if (shStr && typeof shStr === 'string') {
+    shStr.split(',').map(s => s.trim()).filter(s => s).forEach(pair => {
+      const idx = pair.indexOf(':');
+      if (idx > 0) {
+        staticHeaders[pair.substring(0, idx).trim()] = pair.substring(idx + 1).trim();
+      }
+    });
+  } else if (Array.isArray(shStr)) {
+    for (const h of shStr) { if (h.name && h.value) staticHeaders[h.name] = h.value; } // backward compat
   }
-  cLogger.info(`Custom API Lookup v0.6: base=${apiBaseUrl}, batch=${batchEnabled}, batchSize=${batchSize}, cacheMax=${CACHE_MAX_ENTRIES}, field=${lookupField}`);
+
+  cLogger.info(`Custom API Lookup v0.7: base=${apiBaseUrl}, batch=${batchEnabled}, batchSize=${batchSize}, field=${lookupField}`);
 };
 
 // --- URL builder ---
@@ -184,29 +213,19 @@ function enrichEvent(event, apiData) {
   event[enrichPrefix + 'lookup_ts'] = new Date().toISOString();
 }
 
-// -------------------------------------------------------
-// BATCH: fire the pending batch
-// -------------------------------------------------------
+// --- BATCH: fire the pending batch ---
 async function fireBatch() {
   if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
   if (pendingBatch.length === 0) return;
-
   const currentBatch = [...pendingBatch];
   pendingBatch = [];
-
   const toFetch = [];
   for (const entry of currentBatch) {
     const cached = getCached(entry.lookupStr);
-    if (cached) {
-      enrichEvent(entry.event, cached);
-      entry.event[enrichPrefix + 'cache_hit'] = true;
-    } else if (entry.lookupStr) {
-      toFetch.push(entry);
-    } else {
-      entry.event[enrichPrefix + 'lookup_status'] = 'skipped';
-    }
+    if (cached) { enrichEvent(entry.event, cached); entry.event[enrichPrefix + 'cache_hit'] = true; }
+    else if (entry.lookupStr) { toFetch.push(entry); }
+    else { entry.event[enrichPrefix + 'lookup_status'] = 'skipped'; }
   }
-
   if (toFetch.length > 0) {
     try {
       await rateLimit();
@@ -221,44 +240,25 @@ async function fireBatch() {
       const data = await makeRequest(batchUrl, 'POST', headers, JSON.stringify(batchBody));
       const results = Array.isArray(data) ? data : [];
       for (let i = 0; i < toFetch.length; i++) {
-        const entry = toFetch[i];
-        const result = results[i];
-        if (result && result.status !== 'fail') {
-          setCache(entry.lookupStr, result);
-          enrichEvent(entry.event, result);
-        } else {
-          entry.event[enrichPrefix + 'lookup_status'] = result ? 'api_error' : 'no_result';
-          if (result && result.message) entry.event[enrichPrefix + 'lookup_error'] = result.message;
-        }
+        const entry = toFetch[i]; const result = results[i];
+        if (result && result.status !== 'fail') { setCache(entry.lookupStr, result); enrichEvent(entry.event, result); }
+        else { entry.event[enrichPrefix + 'lookup_status'] = result ? 'api_error' : 'no_result'; if (result && result.message) entry.event[enrichPrefix + 'lookup_error'] = result.message; }
       }
     } catch (err) {
       cLogger.error(`Batch lookup failed (${toFetch.length} items): ${err.message}`);
-      for (const entry of toFetch) {
-        entry.event[enrichPrefix + 'lookup_status'] = 'error';
-        entry.event[enrichPrefix + 'lookup_error'] = err.message;
-      }
+      for (const entry of toFetch) { entry.event[enrichPrefix + 'lookup_status'] = 'error'; entry.event[enrichPrefix + 'lookup_error'] = err.message; }
     }
   }
-
-  for (const entry of currentBatch) {
-    entry.resolve(entry.event);
-  }
+  for (const entry of currentBatch) { entry.resolve(entry.event); }
 }
 
-// -------------------------------------------------------
-// SINGLE MODE
-// -------------------------------------------------------
+// --- SINGLE MODE ---
 function processSingle(event) {
   const lookupValue = event[lookupField];
-  if (!lookupValue) {
-    event[enrichPrefix + 'lookup_status'] = 'skipped';
-    event[enrichPrefix + 'lookup_reason'] = `Field '${lookupField}' is empty`;
-    return event;
-  }
+  if (!lookupValue) { event[enrichPrefix + 'lookup_status'] = 'skipped'; event[enrichPrefix + 'lookup_reason'] = `Field '${lookupField}' is empty`; return event; }
   const lookupStr = String(lookupValue);
   const cached = getCached(lookupStr);
   if (cached) { enrichEvent(event, cached); event[enrichPrefix + 'cache_hit'] = true; return event; }
-
   const url = buildUrl(lookupStr);
   const headers = buildHeaders();
   const body = (requestMethod === 'POST' || requestMethod === 'PUT') ? buildBody(lookupStr) : null;
@@ -271,37 +271,21 @@ function processSingle(event) {
     .catch((err) => { cLogger.error(`Lookup failed for ${lookupStr}: ${err.message}`); event[enrichPrefix + 'lookup_status'] = 'error'; event[enrichPrefix + 'lookup_error'] = err.message; return event; });
 }
 
-// -------------------------------------------------------
-// exports.process
-// -------------------------------------------------------
+// --- exports.process ---
 exports.process = (event) => {
   if (!batchEnabled) return processSingle(event);
-
   const lookupValue = event[lookupField];
-  if (!lookupValue) {
-    event[enrichPrefix + 'lookup_status'] = 'skipped';
-    event[enrichPrefix + 'lookup_reason'] = `Field '${lookupField}' is empty`;
-    return event;
-  }
-
+  if (!lookupValue) { event[enrichPrefix + 'lookup_status'] = 'skipped'; event[enrichPrefix + 'lookup_reason'] = `Field '${lookupField}' is empty`; return event; }
   const lookupStr = String(lookupValue);
-
   return new Promise((resolve) => {
     pendingBatch.push({ event, lookupStr, resolve });
-
-    if (pendingBatch.length >= batchSize) {
-      fireBatch();
-      return;
-    }
-
+    if (pendingBatch.length >= batchSize) { fireBatch(); return; }
     if (batchTimer) clearTimeout(batchTimer);
     batchTimer = setTimeout(() => { fireBatch(); }, batchTimeoutMs);
   });
 };
 
-// -------------------------------------------------------
-// exports.flush
-// -------------------------------------------------------
+// --- exports.flush ---
 exports.flush = () => {
   if (!batchEnabled || pendingBatch.length === 0) return null;
   cLogger.info(`Flushing final batch of ${pendingBatch.length} events`);
