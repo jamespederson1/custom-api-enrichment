@@ -1,8 +1,8 @@
 {
   "name": "custom-api-enrichment",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "author": "James Pederson",
-  "description": "Inline API enrichment for Cribl Stream — single mode (1 call per event) and batch mode (shared-Promise pattern, N events per call). Includes ip-api.com geolocation demo pipelines with sample data, plus a generic API template.",
+  "description": "Inline API enrichment for Cribl Stream — single mode and batch mode (up to 5000 events per batch). Custom function with async HTTP, caching, rate limiting, and exports.flush().",
   "displayName": "Custom API Enrichment",
   "tags": {
     "streamtags": ["enrichment", "api", "geolocation", "ip-lookup", "custom-function"],

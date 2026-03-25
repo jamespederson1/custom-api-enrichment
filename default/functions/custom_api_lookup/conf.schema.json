@@ -136,11 +136,11 @@
     },
     "batchSize": {
       "title": "Batch Size",
-      "description": "Events to buffer before firing batch API call. ip-api.com /batch supports up to 100.",
+      "description": "Events to buffer before firing batch API call. Note: ip-api.com /batch supports up to 100 per call, but custom API endpoints may support larger batches. Set according to your API's limits.",
       "type": "number",
       "default": 10,
       "minimum": 2,
-      "maximum": 100
+      "maximum": 5000
     },
     "batchUrl": {
       "title": "Batch API URL",
@@ -150,11 +150,11 @@
     },
     "batchTimeoutMs": {
       "title": "Batch Timeout (ms)",
-      "description": "Max milliseconds to wait for a full batch before firing a partial batch. Prevents events from hanging if traffic is slow. Default 2000ms.",
+      "description": "Max milliseconds to wait for a full batch before firing a partial batch. Prevents events from hanging if traffic is slow. For large batch sizes, increase this value. Default 2000ms.",
       "type": "number",
       "default": 2000,
       "minimum": 500,
-      "maximum": 30000
+      "maximum": 60000
     }
   },
   "required": ["apiBaseUrl", "lookupField"]

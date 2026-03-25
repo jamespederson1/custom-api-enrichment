@@ -5,7 +5,7 @@ const { URL } = require('url');
 const cLogger = C.util.getLogger('func:custom_api_lookup');
 
 exports.name = 'Custom API Lookup';
-exports.version = '0.5';
+exports.version = '0.6';
 exports.group = 'Standard';
 
 // --- Configuration state ---
@@ -35,11 +35,13 @@ let staticHeaders = {};
 let batchEnabled = false;
 let batchSize = 10;
 let batchUrl = '';
-// Shared-promise batch: each event in the batch gets a resolver
-// When the batch fires, ALL resolvers are called and all events proceed
-let pendingBatch = [];    // [{event, lookupStr, resolve}]
+let pendingBatch = [];
 let batchTimer = null;
-let batchTimeoutMs = 2000; // max ms to wait before firing a partial batch
+let batchTimeoutMs = 2000;
+
+// Cache eviction threshold — set higher than max batchSize to avoid
+// evicting entries mid-stream when processing large batches
+const CACHE_MAX_ENTRIES = 50000;
 
 exports.init = (opts) => {
   const conf = opts.conf || {};
@@ -76,7 +78,7 @@ exports.init = (opts) => {
   if (conf.staticHeaders && Array.isArray(conf.staticHeaders)) {
     for (const h of conf.staticHeaders) { if (h.name && h.value) staticHeaders[h.name] = h.value; }
   }
-  cLogger.info(`Custom API Lookup v0.5: base=${apiBaseUrl}, batch=${batchEnabled}, batchSize=${batchSize}, field=${lookupField}`);
+  cLogger.info(`Custom API Lookup v0.6: base=${apiBaseUrl}, batch=${batchEnabled}, batchSize=${batchSize}, cacheMax=${CACHE_MAX_ENTRIES}, field=${lookupField}`);
 };
 
 // --- URL builder ---
@@ -156,7 +158,7 @@ function getCached(key) {
 function setCache(key, val) {
   if (cacheTTL <= 0) return;
   cache.set(key, val); cacheTimestamps.set(key, Date.now());
-  if (cache.size > 10000) { const k = cache.keys().next().value; cache.delete(k); cacheTimestamps.delete(k); }
+  if (cache.size > CACHE_MAX_ENTRIES) { const k = cache.keys().next().value; cache.delete(k); cacheTimestamps.delete(k); }
 }
 
 // --- Enrich event ---
@@ -183,7 +185,7 @@ function enrichEvent(event, apiData) {
 }
 
 // -------------------------------------------------------
-// BATCH: fire the pending batch — called when batch is full or timer expires
+// BATCH: fire the pending batch
 // -------------------------------------------------------
 async function fireBatch() {
   if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
@@ -192,7 +194,6 @@ async function fireBatch() {
   const currentBatch = [...pendingBatch];
   pendingBatch = [];
 
-  // Separate cached vs uncached
   const toFetch = [];
   for (const entry of currentBatch) {
     const cached = getCached(entry.lookupStr);
@@ -216,6 +217,7 @@ async function fireBatch() {
         return item;
       });
       const headers = buildHeaders();
+      cLogger.info(`Firing batch of ${toFetch.length} lookups (${currentBatch.length} total, ${currentBatch.length - toFetch.length} cached)`);
       const data = await makeRequest(batchUrl, 'POST', headers, JSON.stringify(batchBody));
       const results = Array.isArray(data) ? data : [];
       for (let i = 0; i < toFetch.length; i++) {
@@ -230,7 +232,7 @@ async function fireBatch() {
         }
       }
     } catch (err) {
-      cLogger.error(`Batch lookup failed: ${err.message}`);
+      cLogger.error(`Batch lookup failed (${toFetch.length} items): ${err.message}`);
       for (const entry of toFetch) {
         entry.event[enrichPrefix + 'lookup_status'] = 'error';
         entry.event[enrichPrefix + 'lookup_error'] = err.message;
@@ -238,14 +240,13 @@ async function fireBatch() {
     }
   }
 
-  // Resolve ALL promises — each event proceeds downstream
   for (const entry of currentBatch) {
     entry.resolve(entry.event);
   }
 }
 
 // -------------------------------------------------------
-// SINGLE MODE: one API call per event
+// SINGLE MODE
 // -------------------------------------------------------
 function processSingle(event) {
   const lookupValue = event[lookupField];
@@ -271,9 +272,7 @@ function processSingle(event) {
 }
 
 // -------------------------------------------------------
-// exports.process — called once per event
-// In batch mode: each event gets its own Promise that resolves when the batch fires
-// This way Cribl holds each event (waiting on its Promise) instead of dropping it
+// exports.process
 // -------------------------------------------------------
 exports.process = (event) => {
   if (!batchEnabled) return processSingle(event);
@@ -287,28 +286,25 @@ exports.process = (event) => {
 
   const lookupStr = String(lookupValue);
 
-  // Each event gets its own Promise — Cribl waits for it
   return new Promise((resolve) => {
     pendingBatch.push({ event, lookupStr, resolve });
 
-    // If batch is full, fire immediately
     if (pendingBatch.length >= batchSize) {
       fireBatch();
       return;
     }
 
-    // Otherwise start/reset the timer for partial batches
     if (batchTimer) clearTimeout(batchTimer);
     batchTimer = setTimeout(() => { fireBatch(); }, batchTimeoutMs);
   });
 };
 
 // -------------------------------------------------------
-// exports.flush — safety net for end-of-stream
+// exports.flush
 // -------------------------------------------------------
 exports.flush = () => {
   if (!batchEnabled || pendingBatch.length === 0) return null;
   cLogger.info(`Flushing final batch of ${pendingBatch.length} events`);
   fireBatch();
-  return null; // events were already resolved via their Promises
+  return null;
 };

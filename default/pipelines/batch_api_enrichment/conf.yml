@@ -1,6 +1,6 @@
 output: default
 groups: {}
-asyncFuncTimeout: 15000
+asyncFuncTimeout: 65000
 functions:
   - id: comment
     filter: "true"
@@ -9,23 +9,22 @@ functions:
       comment: >-
         BATCH MODE — ip-api.com Geolocation Enrichment
 
+        Supports batch sizes up to 5,000 events per API call.
+        asyncFuncTimeout set to 65s to allow large batches to complete.
+
         How it works:
-        - Events are buffered until batchSize (6) events accumulate
-        - One POST request is made to ip-api.com/batch with all IPs
+        - Events are buffered until batchSize events accumulate
+        - One POST request is made to the batch endpoint with all values
         - Response array is matched back to events in order
-        - A 2-second timer auto-fires partial batches so events don't hang
+        - A configurable timer auto-fires partial batches so events don't hang
 
         IMPORTANT — Data Preview vs Live Traffic:
-        In Data Preview, Cribl processes events SEQUENTIALLY — it waits for each
-        event's Promise to resolve before sending the next one. This means the
-        batch never fills up and each event fires individually (like single mode).
-        
-        In LIVE TRAFFIC with concurrent worker threads, multiple events arrive
-        simultaneously and the batch accumulates properly, making one API call
-        for N events. This is where batch mode shows its real value.
-        
-        To verify batch behavior, check the worker logs during live traffic for
-        messages like "Custom API Lookup v0.5" showing the batch configuration.
+        In Data Preview, Cribl processes events SEQUENTIALLY — the batch never
+        fills and each event fires individually. In LIVE TRAFFIC with concurrent
+        workers, batches fill properly and reduce API calls dramatically.
+
+        Note: ip-api.com /batch supports max 100 per call. For larger batches,
+        use a custom API endpoint that supports higher limits.
 
         Use sample: data/samples/batch_mode_12_events.json (12 events)
   - id: custom_api_lookup
@@ -42,7 +41,7 @@ functions:
       authType: none
       authHeaderName: "X-API-Key"
       requestMethod: GET
-      requestTimeout: 5000
+      requestTimeout: 30000
       bodyTemplate: ""
       responseMode: merge_fields
       selectedFields: []
@@ -54,4 +53,4 @@ functions:
       batchSize: 6
       batchUrl: "http://ip-api.com/batch"
       batchTimeoutMs: 2000
-    description: "Batch mode: buffers events, one POST to ip-api.com/batch per batch (batching works in live traffic, sequential in Preview)"
+    description: "Batch mode: buffers events, one POST per batch. Supports up to 5000 events per batch for custom APIs."
