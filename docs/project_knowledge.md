@@ -64,7 +64,7 @@ The pack ships configured with **ip-api.com** (free, no auth) for IP geolocation
 
 **Local path:** `C:\Users\James Pederson\Desktop\git\Remote\custom-api-enrichment`
 **GitHub remote:** `https://github.com/jamespederson1/custom-api-enrichment`
-**Current version:** 0.9.0
+**Current version:** 1.0.0
 
 ---
 
@@ -82,7 +82,7 @@ custom-api-enrichment/
 │   ├── samples.yml                       # Sample file registry (Nightfall pattern)
 │   ├── functions/
 │   │   └── custom_api_lookup/
-│   │       ├── index.js                  # Core function (v0.5, single + batch modes)
+│   │       ├── index.js                  # Core function (v0.6, single + batch modes)
 │   │       ├── package.json              # No npm dependencies
 │   │       ├── conf.schema.json          # UI form schema (all config fields)
 │   │       └── config.ui-schema.json     # UI widget overrides (password, textarea)
@@ -98,7 +98,8 @@ custom-api-enrichment/
 │   └── samples/
 │       ├── singleM1.json                 # 3 events for single mode testing
 │       └── batchM1.json                  # 12 events for batch mode testing
-└── dist/                                 # Built .crbl files (gitignored)
+└── dist/                                 # Built .crbl release files
+    └── custom_api_enrichment_1.0.0.crbl  # Latest release build
 ```
 
 ---
@@ -138,9 +139,16 @@ Example for ip-api.com: `http://ip-api.com/json` + path + `8.8.8.8` + `?fields=.
 
 ### Caching
 - In-memory `Map` with configurable TTL (default 300s)
-- Max 10,000 entries with LRU eviction
+- Max 50,000 entries with LRU eviction
 - Cache is per-worker-process (not shared across workers)
 - Cache hit adds `<prefix>cache_hit: true` to event
+
+### Batch Mode
+- Batch size configurable from 2 to 5,000 events per batch
+- Shared-Promise pattern: each event gets its own Promise, all resolve when batch fires
+- Batch timeout (default 2s, max 60s) auto-fires partial batches
+- Cache-aware: cached IPs skip the API call, only uncached IPs go in the batch body
+- `exports.flush()` fires remaining partial batch at end-of-stream
 
 ### No npm Dependencies
 Uses Node.js built-in `http`, `https`, and `url` modules only. No `node_modules` directory needed. Unlike the Nightfall pack which bundles `axios`/`nightfall-js` (~508KB), this pack has zero external dependencies.
@@ -161,6 +169,7 @@ Uses Node.js built-in `http`, `https`, and `url` modules only. No `node_modules`
 - Sample: `batchM1.json` (12 events, various public DNS/CDN IPs)
 - `batchEnabled: true`, `batchSize: 6`, `batchUrl: http://ip-api.com/batch`
 - Each event returns a Promise; batch fires when 6 accumulate or 2s timeout
+- `asyncFuncTimeout: 65000` to support large batches
 
 #### IMPORTANT: Data Preview vs Live Traffic
 **In Data Preview**, Cribl processes events **sequentially** — it waits for each event's Promise to resolve before sending the next. The batch never fills; each event fires individually (like single mode but hitting the `/batch` endpoint with 1 IP).
@@ -190,13 +199,31 @@ Sample format: JSON array (not NDJSON). Matches Nightfall pack pattern with `sam
 
 ## Deployment Process
 
-### Build .crbl
+**IMPORTANT:** Every deployment MUST follow ALL steps below. The .crbl file MUST be built into `dist/` and committed to git on every version change.
+
+### Step 1: Update `package.json` version
+The version shown in Cribl UI comes from `package.json` in the repo root. **Always update this before building.**
 ```powershell
-cd "C:\Users\James Pederson\Desktop\git\Remote\custom-api-enrichment"
-tar czf "$env:USERPROFILE\Downloads\custom_api_enrichment_<version>.crbl" --exclude='.git' --exclude='dist' --exclude='.gitignore' .
+# Edit C:\Users\James Pederson\Desktop\git\Remote\custom-api-enrichment\package.json
+# Change "version": "x.y.z" to the new version number
 ```
 
-### Deploy to On-Prem (full cycle)
+### Step 2: Build .crbl into dist/
+```powershell
+cd "C:\Users\James Pederson\Desktop\git\Remote\custom-api-enrichment"
+$version = (Get-Content package.json | ConvertFrom-Json).version
+tar czf "dist\custom_api_enrichment_${version}.crbl" --exclude='.git' --exclude='dist' --exclude='.gitignore' .
+Write-Host "Built dist\custom_api_enrichment_${version}.crbl"
+```
+
+### Step 3: Commit and push to GitHub
+```powershell
+git add -A
+git commit -m "v${version}: <description of changes>"
+git push origin master
+```
+
+### Step 4: Deploy to on-prem Cribl leader
 ```powershell
 # Authenticate
 $auth = Invoke-RestMethod -Method POST -Uri 'http://10.198.32.60:9000/api/v1/auth/login' -ContentType 'application/json' -Body '{"username":"admin","password":"QQV9vxaBWWpGFYD"}'
@@ -206,13 +233,34 @@ $token = $auth.token
 curl.exe -s -k -X DELETE "http://10.198.32.60:9000/api/v1/m/default/packs/custom-api-enrichment" -H "Authorization: Bearer $token"
 
 # Upload new version (PUT with octet-stream, NOT multipart)
-curl.exe -s -k -X PUT "http://10.198.32.60:9000/api/v1/m/default/packs?filename=<filename>.crbl" -H "Authorization: Bearer $token" -H "Content-Type: application/octet-stream" --data-binary "@<filepath>"
+$filePath = "C:\Users\James Pederson\Desktop\git\Remote\custom-api-enrichment\dist\custom_api_enrichment_${version}.crbl"
+$upload = curl.exe -s -k -X PUT "http://10.198.32.60:9000/api/v1/m/default/packs?filename=custom_api_enrichment_${version}.crbl" -H "Authorization: Bearer $token" -H "Content-Type: application/octet-stream" --data-binary "@$filePath"
 
 # Install (POST with source from upload response)
-curl.exe -s -k -X POST "http://10.198.32.60:9000/api/v1/m/default/packs" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"source":"<source_from_upload>","id":"custom-api-enrichment"}'
+$source = ($upload | ConvertFrom-Json).source
+Set-Content -Path "$env:TEMP\install.json" -Value "{`"source`":`"$source`",`"id`":`"custom-api-enrichment`"}" -NoNewline
+curl.exe -s -k -X POST "http://10.198.32.60:9000/api/v1/m/default/packs" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "@$env:TEMP\install.json"
 ```
 
-### CRITICAL: version in Cribl UI comes from `package.json`, not commit messages or pack.yml
+### Step 5: Verify deployment
+```powershell
+curl.exe -s -k "http://10.198.32.60:9000/api/v1/m/default/packs/custom-api-enrichment" -H "Authorization: Bearer $token"
+# Confirm version matches package.json
+```
+
+### Deployment Checklist
+- [ ] `package.json` version updated
+- [ ] `.crbl` built into `dist/` directory
+- [ ] All changes committed and pushed to GitHub
+- [ ] Old pack deleted from Cribl on-prem
+- [ ] New pack uploaded and installed
+- [ ] Version verified in Cribl API response
+
+### CRITICAL REMINDERS:
+- **Version in Cribl UI comes from `package.json`**, not commit messages or pack.yml
+- **Always build .crbl into `dist/`** so release builds are tracked in git
+- **Upload uses PUT with `application/octet-stream`**, NOT POST/multipart
+- **PowerShell mangles inline JSON** — write JSON to temp file and use `-d @filepath`
 
 ---
 
@@ -233,6 +281,7 @@ curl.exe -s -k -X POST "http://10.198.32.60:9000/api/v1/m/default/packs" -H "Aut
 | Orphan `batch_api_lookup` function directory | Created during iteration, not used | Deleted; batch pipeline uses `custom_api_lookup` with `batchEnabled: true` |
 | `login.cribl.cloud` auth for Cloud | Different OAuth endpoint than on-prem | Cloud: POST to `https://login.cribl.cloud/oauth/token` with client_credentials grant |
 | On-prem auth: username case-sensitive | Tried `Admin` (capital A) | Correct username is `admin` (lowercase) |
+| .crbl not tracked in git | `.gitignore` excluded `dist/` and `*.crbl` | Updated `.gitignore` to allow dist/ and .crbl files |
 
 ---
 
@@ -243,7 +292,7 @@ curl.exe -s -k -X POST "http://10.198.32.60:9000/api/v1/m/default/packs" -H "Aut
 | Authenticate | POST | `/api/v1/auth/login` |
 | List packs | GET | `/api/v1/m/default/packs` |
 | Get pack | GET | `/api/v1/m/default/packs/custom-api-enrichment` |
-| Upload pack | PUT | `/api/v1/m/default/packs?filename=<name>.crbl` |
+| Upload pack | PUT | `/api/v1/m/default/packs?filename=<n>.crbl` |
 | Install pack | POST | `/api/v1/m/default/packs` (body: `{"source":"<upload_source>","id":"<pack_id>"}`) |
 | Delete pack | DELETE | `/api/v1/m/default/packs/custom-api-enrichment` |
 
@@ -290,3 +339,4 @@ To point the pack at a different API, edit the `custom_api_lookup` function sett
 | 0.8.0 | 2026-03-24 | Fixed sample format (JSON arrays, samples.yml with IDs) |
 | 0.9.0 | 2026-03-24 | Fixed batch mode: shared-Promise pattern instead of return null |
 | 0.9.2 | 2026-03-24 | Documented batch Preview vs live traffic behavior, added batchTimeoutMs |
+| 1.0.0 | 2026-03-24 | Batch size up to 5000, cache 50k entries, .crbl in dist/ |
